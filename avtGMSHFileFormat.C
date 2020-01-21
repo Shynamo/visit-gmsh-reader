@@ -172,23 +172,23 @@ avtGMSHFileFormat::PopulateDatabaseMetaData(avtDatabaseMetaData *md)
   //
   // CODE TO ADD A MESH
   //
-  // string meshname = ...
+  std::string meshname = "gmsh";
   //
   // AVT_RECTILINEAR_MESH, AVT_CURVILINEAR_MESH, AVT_UNSTRUCTURED_MESH,
   // AVT_POINT_MESH, AVT_SURFACE_MESH, AVT_UNKNOWN_MESH
-  // avtMeshType mt = AVT_RECTILINEAR_MESH;
+  avtMeshType mt = AVT_RECTILINEAR_MESH;
   //
-  // int nblocks = 1;  <-- this must be 1 for STSD
-  // int block_origin = 0;
-  // int spatial_dimension = 2;
-  // int topological_dimension = 2;
-  // double *extents = NULL;
+  int nblocks = 1; // <-- this must be 1 for STSD
+  int block_origin = 0;
+  int topological_dimension = 3;
+  int spatial_dimension = 3;
+  double *extents = NULL;
   //
   // Here's the call that tells the meta-data object that we have a mesh:
   //
-  // AddMeshToMetaData(md, meshname, mt, extents, nblocks, block_origin,
-  //                   spatial_dimension, topological_dimension);
-  //
+  AddMeshToMetaData(md, meshname, mt, extents, nblocks, block_origin,
+                    spatial_dimension, topological_dimension);
+
 
   //
   // CODE TO ADD A SCALAR VARIABLE
@@ -240,7 +240,6 @@ avtGMSHFileFormat::GetMesh(const char *meshname)
 
   ins.close();
   
-  // TODO:
   // Lire les coordonnées des noeuds (entre les balises $Nodes et $EndNodes).
   std::vector<std::string>::iterator nodes_start_it = std::find(m_data.begin(), m_data.end(), "$Nodes");
   int nodes_index = std::distance(m_data.begin(), nodes_start_it);
@@ -257,13 +256,22 @@ avtGMSHFileFormat::GetMesh(const char *meshname)
     z.push_back(std::stod(toks_vertices[3]));
   }
 
-  // TODO:
-  // Puis utiliser la structure de données VTK appropriée pour les stocker.
 
-  // TODO:
+
+  //======================  BEGIN CODE WRITTEN:
+  // Puis utiliser la structure de données VTK appropriée pour les stocker.
+  vtkPoints *points = vtkPoints::New();
+  points->SetNumberOfPoints(nnodes);
+  for (int i = 0; i < nnodes; ++i) {
+    points->SetPoint(i, x[i], y[i], z[i]);
+  }
+
   // Initialiser un maillage non structuré à partir de cette dernière structure.
+  vtkUnstructuredGrid *ugrid = vtkUnstructuredGrid::New();
+  ugrid->SetPoints(points);
+  points->Delete();
+  //======================  END CODE WRITTEN:
     
-  // TODO:
   // Lire les éléments (triangles et tetrahèdres) entre les balises $Elements et $EndElements.
   std::vector<std::string>::iterator elements_start_it =
     std::find(m_data.begin(), m_data.end(), "$Elements");
@@ -297,13 +305,35 @@ avtGMSHFileFormat::GetMesh(const char *meshname)
     }
   }
   
-  // TODO:
+  //======================  BEGIN CODE WRITTEN:
   // Allouer l'espace mémoire utilisé par le maillage en fonction du nombre de cellules.
+  ugrid->Allocate(elements_data.size());
 
-  // TODO:
   // Utiliser la structure de données VTK appropriée pour stocker les éléments du maillage.
+  vtkIdList *ids = vtkIdList::New();
+  for (std::vector<int> &elm: elements_data){
+    if (elm[0] == 2){
+      ids->SetNumberOfIds(3);
+      ids->SetId(0, elm[0]);
+      ids->SetId(1, elm[1]);
+      ids->SetId(2, elm[2]);
+      ugrid->InsertNextCell(VTK_TRIANGLE, ids); // (value, type) : https://vtk.org/doc/nightly/html/vtkCellType_8h.html http://gmsh.info/doc/texinfo/#MSH-file-format
+
+    } else if (elm[0] == 4){
+      ids->SetNumberOfIds(4);
+      ids->SetId(0, elm[0]);
+      ids->SetId(1, elm[1]);
+      ids->SetId(2, elm[2]);
+      ids->SetId(3, elm[3]);
+      ugrid->InsertNextCell(VTK_TETRA, ids);
+
+    } else {
+      //return nullptr;
+    }
+  }
   
-  return nullptr;
+  return ugrid;
+  //======================  END CODE WRITTEN:
 }
 
 // ****************************************************************************
@@ -325,8 +355,6 @@ avtGMSHFileFormat::GetMesh(const char *meshname)
 vtkDataArray *
 avtGMSHFileFormat::GetVar(const char *varname)
 {
-  return nullptr;
-
   //
   // If you have a file format where variables don't apply (for example a
   // strictly polygonal format like the STL (Stereo Lithography) format,
@@ -335,19 +363,53 @@ avtGMSHFileFormat::GetVar(const char *varname)
   // EXCEPTION1(InvalidVariableException, varname);
   //
 
+  //======================  BEGIN CODE WRITTEN:
+
+  // Lire les éléments (tags) entre les balises $Elements et $EndElements.
+  std::vector<std::string>::iterator elements_start_it =
+    std::find(m_data.begin(), m_data.end(), "$Elements");
+  int elements_index = std::distance(m_data.begin(), elements_start_it);
+  int elements_data_start_index = elements_index + 2;
+  std::vector<std::string>::iterator elements_end_it = std::find(m_data.begin(), m_data.end(), "$EndElements");
+  int elements_end_index = std::distance(m_data.begin(), elements_end_it);
+
+  // elements_data : var1, var2, ...
+  std::vector<std::vector<int>> elements_data;
+
+  
+  
+  for (int i = elements_data_start_index; i < elements_end_index; ++i) {
+    std::cout << m_data[i] << std::endl;
+    std::vector<std::string> toks_elms = split(m_data[i]);
+    // Ajout des variables scalaires.
+    std::vector<int> elm;
+    int nb = toks_elms.size();
+    int nvar = std::stoi(toks_elms[2]);
+    elm.push_back(nvar);
+    for (int i = 0; i < nvar; i++){
+      elm.push_back(std::stoi(toks_elms[3+i]));
+      std::cout << toks_elms[3+i] << std::endl;
+    }
+    elements_data.push_back(elm);
+  }
+
   //
   // If you do have a scalar variable, here is some code that may be helpful.
   //
-  // int ntuples = XXX; // this is the number of entries in the variable.
-  // vtkFloatArray *rv = vtkFloatArray::New();
-  // rv->SetNumberOfTuples(ntuples);
-  // for (int i = 0 ; i < ntuples ; i++)
-  // {
-  //      rv->SetTuple1(i, VAL);  // you must determine value for ith entry.
-  // }
-  //
-  // return rv;
-  //
+  int ntuples = elements_data.size(); // this is the number of entries in the variable.
+  vtkFloatArray *rv = vtkFloatArray::New();
+  rv->SetNumberOfTuples(ntuples);
+  for (int i = 0 ; i < ntuples ; i++)
+  {
+    std::vector<int> elm = elements_data[i];
+    for (int tag = 0; tag < elm[0]; tag++){
+      //rv->SetTuple1(i, tag, elm[tag+1]);  // you must determine value for ith entry.
+    }
+  }
+  
+  return rv;
+
+  //======================  END CODE WRITTEN:
 }
 
 
