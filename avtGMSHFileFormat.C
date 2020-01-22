@@ -56,6 +56,7 @@
 #include <vtkStructuredGrid.h>
 #include <vtkUnstructuredGrid.h>
 #include <vtkCellType.h>
+#include <vtkSmartPointer.h>
 
 #include <avtDatabaseMetaData.h>
 
@@ -189,21 +190,40 @@ avtGMSHFileFormat::PopulateDatabaseMetaData(avtDatabaseMetaData *md)
   AddMeshToMetaData(md, meshname, mt, extents, nblocks, block_origin,
                     spatial_dimension, topological_dimension);
 
+  //======================  BEGIN CODE WRITTEN:
 
   //
   // CODE TO ADD A SCALAR VARIABLE
   //
-  // string mesh_for_this_var = meshname; // ??? -- could be multiple meshes
-  // string varname = ...
-  //
-  // AVT_NODECENT, AVT_ZONECENT, AVT_UNKNOWN_CENT
-  // avtCentering cent = AVT_NODECENT;
-  //
-  //
-  // Here's the call that tells the meta-data object that we have a var:
-  //
-  // AddScalarVarToMetaData(md, varname, mesh_for_this_var, cent);
-  //
+
+  // Getting the amount of variables to add
+
+  // Lire les éléments (tags) entre les balises $Elements et $EndElements.
+  std::vector<std::string>::iterator elements_start_it =
+    std::find(m_data.begin(), m_data.end(), "$Elements");
+  int elements_index = std::distance(m_data.begin(), elements_start_it);
+  int elements_start_index = elements_index + 2;
+  std::vector<std::string>::iterator elements_end_it = std::find(m_data.begin(), m_data.end(), "$EndElements");
+  int elements_end_index = std::distance(m_data.begin(), elements_end_it);
+
+  // Finding the maximum amount of scalar data for each line
+  /* int ncomponents = 0;
+  for (int i = elements_start_index; i < elements_end_index; ++i) {
+    std::vector<std::string> toks_elms = split(m_data[i]);
+    ncomponents = std::max(ncomponents, std::stoi(toks_elms[2]));
+  }
+
+  for (int i = 0; i < ncomponents; i++){
+    // Here's the call that tells the meta-data object that we have a var:
+    AddScalarVarToMetaData(md, (std::string) "Variable"+std::to_string(i),
+                           meshname, AVT_ZONECENT); //AVT_NODECENT, AVT_ZONECENT, AVT_UNKNOWN_CENT
+  } */
+
+  // Variables having id "2" and "4"
+  AddScalarVarToMetaData(md, "Var1", meshname, AVT_ZONECENT); //AVT_NODECENT, AVT_ZONECENT, AVT_UNKNOWN_CENT
+  AddScalarVarToMetaData(md, "Var2", meshname, AVT_ZONECENT); //AVT_NODECENT, AVT_ZONECENT, AVT_UNKNOWN_CENT
+
+  //======================  END CODE WRITTEN:
 }
 
 
@@ -276,14 +296,14 @@ avtGMSHFileFormat::GetMesh(const char *meshname)
   std::vector<std::string>::iterator elements_start_it =
     std::find(m_data.begin(), m_data.end(), "$Elements");
   int elements_index = std::distance(m_data.begin(), elements_start_it);
-  int elements_data_start_index = elements_index + 2;
+  int elements_start_index = elements_index + 2;
   std::vector<std::string>::iterator elements_end_it = std::find(m_data.begin(), m_data.end(), "$EndElements");
   int elements_end_index = std::distance(m_data.begin(), elements_end_it);
 
   // elements_data : element_id, cell_ids, ...
   std::vector<std::vector<int>> elements_data;
   
-  for (int i = elements_data_start_index; i < elements_end_index; ++i) {
+  for (int i = elements_start_index; i < elements_end_index; ++i) {
     std::vector<std::string> toks_elms = split(m_data[i]);
     // Ajout des triangles et tetrahedres.
     std::vector<int> elm;
@@ -369,44 +389,65 @@ avtGMSHFileFormat::GetVar(const char *varname)
   std::vector<std::string>::iterator elements_start_it =
     std::find(m_data.begin(), m_data.end(), "$Elements");
   int elements_index = std::distance(m_data.begin(), elements_start_it);
-  int elements_data_start_index = elements_index + 2;
+  int elements_start_index = elements_index + 2;
   std::vector<std::string>::iterator elements_end_it = std::find(m_data.begin(), m_data.end(), "$EndElements");
   int elements_end_index = std::distance(m_data.begin(), elements_end_it);
+  int nvalues = elements_end_index - elements_start_index;
 
-  // elements_data : var1, var2, ...
-  std::vector<std::vector<int>> elements_data;
-
-  
-  
-  for (int i = elements_data_start_index; i < elements_end_index; ++i) {
-    std::cout << m_data[i] << std::endl;
+  // Finding the maximum amount of scalar data for each line
+  int ncomponents = 0;
+  for (int i = elements_start_index; i < elements_end_index; ++i) {
     std::vector<std::string> toks_elms = split(m_data[i]);
-    // Ajout des variables scalaires.
-    std::vector<int> elm;
-    int nb = toks_elms.size();
-    int nvar = std::stoi(toks_elms[2]);
-    elm.push_back(nvar);
-    for (int i = 0; i < nvar; i++){
-      elm.push_back(std::stoi(toks_elms[3+i]));
-      std::cout << toks_elms[3+i] << std::endl;
-    }
-    elements_data.push_back(elm);
+    ncomponents = std::max(ncomponents, std::stoi(toks_elms[2]));
   }
+  //int ncomponents = 2;
+
+  // Creating and allocating vector of float arrays containing data
+  std::vector<float*> elements_data;
+  for (int i = 0; i < ncomponents; i++){
+    elements_data.push_back(new float[nvalues]);
+  }
+
+  // Filling element data with the scalars
+  for (int i = elements_start_index; i < elements_end_index; ++i) {
+    std::vector<std::string> toks_elms = split(m_data[i]);
+    int nvar = std::stoi(toks_elms[2]);
+    if (toks_elms[1] == "2" || toks_elms[1] == "4") {
+      // Adding available scalar items
+      for (int j = 0; j < nvar; j++){
+        elements_data[j][i - elements_start_index] = std::stof(toks_elms[3+j]);
+      }
+      // Filling up with 0 if not enough scalars
+      for (int j = nvar; j < ncomponents; j++){
+        elements_data[j][i - elements_start_index] = 0;
+      }
+    }
+  }
+  /* for (int i = elements_start_index; i < elements_end_index; ++i) {
+    std::vector<std::string> toks_elms = split(m_data[i]);
+    int nvar = std::stoi(toks_elms[2]);
+    if (toks_elms[1] == "2")
+        elements_data[0][i - elements_start_index] = std::stof(toks_elms[3]);
+    if (toks_elms[1] == "4")
+      elements_data[1][i - elements_start_index] = std::stof(toks_elms[3]);
+  } */
 
   //
   // If you do have a scalar variable, here is some code that may be helpful.
   //
-  int ntuples = elements_data.size(); // this is the number of entries in the variable.
-  vtkFloatArray *rv = vtkFloatArray::New();
-  rv->SetNumberOfTuples(ntuples);
-  for (int i = 0 ; i < ntuples ; i++)
-  {
-    std::vector<int> elm = elements_data[i];
-    for (int tag = 0; tag < elm[0]; tag++){
-      //rv->SetTuple1(i, tag, elm[tag+1]);  // you must determine value for ith entry.
-    }
+  vtkDataArray *rv = vtkFloatArray::New();
+
+  // Setting up the Float array settings
+  rv->SetName("Scalar Values");
+  rv->SetNumberOfTuples(ncomponents);
+  rv->SetNumberOfComponents(ncomponents);
+  rv->SetNumberOfValues(nvalues);
+
+  // Filling the array
+  for (int i = 0 ; i < ncomponents ; i++){
+    rv->SetTuple(i, elements_data[i]);
   }
-  
+
   return rv;
 
   //======================  END CODE WRITTEN:
