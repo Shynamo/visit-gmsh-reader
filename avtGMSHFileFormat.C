@@ -196,32 +196,9 @@ avtGMSHFileFormat::PopulateDatabaseMetaData(avtDatabaseMetaData *md)
   // CODE TO ADD A SCALAR VARIABLE
   //
 
-  // Getting the amount of variables to add
-
-  // Lire les éléments (tags) entre les balises $Elements et $EndElements.
-  std::vector<std::string>::iterator elements_start_it =
-    std::find(m_data.begin(), m_data.end(), "$Elements");
-  int elements_index = std::distance(m_data.begin(), elements_start_it);
-  int elements_start_index = elements_index + 2;
-  std::vector<std::string>::iterator elements_end_it = std::find(m_data.begin(), m_data.end(), "$EndElements");
-  int elements_end_index = std::distance(m_data.begin(), elements_end_it);
-
-  // Finding the maximum amount of scalar data for each line
-  /* int ncomponents = 0;
-  for (int i = elements_start_index; i < elements_end_index; ++i) {
-    std::vector<std::string> toks_elms = split(m_data[i]);
-    ncomponents = std::max(ncomponents, std::stoi(toks_elms[2]));
-  }
-
-  for (int i = 0; i < ncomponents; i++){
-    // Here's the call that tells the meta-data object that we have a var:
-    AddScalarVarToMetaData(md, (std::string) "Variable"+std::to_string(i),
-                           meshname, AVT_ZONECENT); //AVT_NODECENT, AVT_ZONECENT, AVT_UNKNOWN_CENT
-  } */
-
   // Variables having id "2" and "4"
-  AddScalarVarToMetaData(md, "Var1", meshname, AVT_ZONECENT); //AVT_NODECENT, AVT_ZONECENT, AVT_UNKNOWN_CENT
-  AddScalarVarToMetaData(md, "Var2", meshname, AVT_ZONECENT); //AVT_NODECENT, AVT_ZONECENT, AVT_UNKNOWN_CENT
+  AddScalarVarToMetaData(md, "physical", meshname, AVT_ZONECENT); //AVT_NODECENT, AVT_ZONECENT, AVT_UNKNOWN_CENT
+  AddScalarVarToMetaData(md, "elementary", meshname, AVT_ZONECENT); //AVT_NODECENT, AVT_ZONECENT, AVT_UNKNOWN_CENT
 
   //======================  END CODE WRITTEN:
 }
@@ -259,7 +236,7 @@ avtGMSHFileFormat::GetMesh(const char *meshname)
   }
 
   ins.close();
-  
+
   // Lire les coordonnées des noeuds (entre les balises $Nodes et $EndNodes).
   std::vector<std::string>::iterator nodes_start_it = std::find(m_data.begin(), m_data.end(), "$Nodes");
   int nodes_index = std::distance(m_data.begin(), nodes_start_it);
@@ -276,13 +253,12 @@ avtGMSHFileFormat::GetMesh(const char *meshname)
     z.push_back(std::stod(toks_vertices[3]));
   }
 
-
-
   //======================  BEGIN CODE WRITTEN:
   // Puis utiliser la structure de données VTK appropriée pour les stocker.
+  int nbp = x.size();
   vtkPoints *points = vtkPoints::New();
-  points->SetNumberOfPoints(nnodes);
-  for (int i = 0; i < nnodes; ++i) {
+  points->SetNumberOfPoints(nbp);
+  for(int i = 0; i < nbp; i++){
     points->SetPoint(i, x[i], y[i], z[i]);
   }
 
@@ -291,19 +267,19 @@ avtGMSHFileFormat::GetMesh(const char *meshname)
   ugrid->SetPoints(points);
   points->Delete();
   //======================  END CODE WRITTEN:
-    
+
   // Lire les éléments (triangles et tetrahèdres) entre les balises $Elements et $EndElements.
   std::vector<std::string>::iterator elements_start_it =
     std::find(m_data.begin(), m_data.end(), "$Elements");
   int elements_index = std::distance(m_data.begin(), elements_start_it);
-  int elements_start_index = elements_index + 2;
+  int elements_data_start_index = elements_index + 2;
   std::vector<std::string>::iterator elements_end_it = std::find(m_data.begin(), m_data.end(), "$EndElements");
   int elements_end_index = std::distance(m_data.begin(), elements_end_it);
 
   // elements_data : element_id, cell_ids, ...
   std::vector<std::vector<int>> elements_data;
-  
-  for (int i = elements_start_index; i < elements_end_index; ++i) {
+
+  for (int i = elements_data_start_index; i < elements_end_index; ++i) {
     std::vector<std::string> toks_elms = split(m_data[i]);
     // Ajout des triangles et tetrahedres.
     std::vector<int> elm;
@@ -324,35 +300,37 @@ avtGMSHFileFormat::GetMesh(const char *meshname)
       elements_data.push_back(elm);
     }
   }
-  
+
   //======================  BEGIN CODE WRITTEN:
   // Allouer l'espace mémoire utilisé par le maillage en fonction du nombre de cellules.
   ugrid->Allocate(elements_data.size());
 
   // Utiliser la structure de données VTK appropriée pour stocker les éléments du maillage.
   vtkIdList *ids = vtkIdList::New();
-  for (std::vector<int> &elm: elements_data){
-    if (elm[0] == 2){
+  for(auto& elm : elements_data){
+    if(elm[0] == 2){
       ids->SetNumberOfIds(3);
-      ids->SetId(0, elm[0]);
-      ids->SetId(1, elm[1]);
-      ids->SetId(2, elm[2]);
-      ugrid->InsertNextCell(VTK_TRIANGLE, ids); // (value, type) : https://vtk.org/doc/nightly/html/vtkCellType_8h.html http://gmsh.info/doc/texinfo/#MSH-file-format
+      ids->SetId(0, elm[1]);
+      ids->SetId(1, elm[2]);
+      ids->SetId(2, elm[3]);
+      ugrid->InsertNextCell(VTK_TRIANGLE, ids);
 
-    } else if (elm[0] == 4){
+    } else if (elm[0] == 4) {
       ids->SetNumberOfIds(4);
-      ids->SetId(0, elm[0]);
-      ids->SetId(1, elm[1]);
-      ids->SetId(2, elm[2]);
-      ids->SetId(3, elm[3]);
+      ids->SetId(0, elm[1]);
+      ids->SetId(1, elm[2]);
+      ids->SetId(2, elm[3]);
+      ids->SetId(3, elm[4]);
       ugrid->InsertNextCell(VTK_TETRA, ids);
 
     } else {
-      //return nullptr;
+      std::cerr << "Invalid cell type" << std::endl;
+      // return nullptr;
     }
   }
-  
+
   return ugrid;
+
   //======================  END CODE WRITTEN:
 }
 
@@ -375,82 +353,44 @@ avtGMSHFileFormat::GetMesh(const char *meshname)
 vtkDataArray *
 avtGMSHFileFormat::GetVar(const char *varname)
 {
-  //
-  // If you have a file format where variables don't apply (for example a
-  // strictly polygonal format like the STL (Stereo Lithography) format,
-  // then uncomment the code below.
-  //
-  // EXCEPTION1(InvalidVariableException, varname);
-  //
-
-  //======================  BEGIN CODE WRITTEN:
-
-  // Lire les éléments (tags) entre les balises $Elements et $EndElements.
-  std::vector<std::string>::iterator elements_start_it =
-    std::find(m_data.begin(), m_data.end(), "$Elements");
-  int elements_index = std::distance(m_data.begin(), elements_start_it);
-  int elements_start_index = elements_index + 2;
-  std::vector<std::string>::iterator elements_end_it = std::find(m_data.begin(), m_data.end(), "$EndElements");
-  int elements_end_index = std::distance(m_data.begin(), elements_end_it);
-  int nvalues = elements_end_index - elements_start_index;
-
-  // Finding the maximum amount of scalar data for each line
-  int ncomponents = 0;
-  for (int i = elements_start_index; i < elements_end_index; ++i) {
-    std::vector<std::string> toks_elms = split(m_data[i]);
-    ncomponents = std::max(ncomponents, std::stoi(toks_elms[2]));
-  }
-  //int ncomponents = 2;
-
-  // Creating and allocating vector of float arrays containing data
-  std::vector<float*> elements_data;
-  for (int i = 0; i < ncomponents; i++){
-    elements_data.push_back(new float[nvalues]);
+  int tag;
+  if(strcmp(varname, "physical") == 0){
+    tag = 3;
+  } else if(strcmp(varname, "elementary") == 0){
+    tag = 4;
+  } else {
+    EXCEPTION1(InvalidVariableException, varname);
+    return nullptr;
   }
 
-  // Filling element data with the scalars
-  for (int i = elements_start_index; i < elements_end_index; ++i) {
-    std::vector<std::string> toks_elms = split(m_data[i]);
-    int nvar = std::stoi(toks_elms[2]);
-    if (toks_elms[1] == "2" || toks_elms[1] == "4") {
-      // Adding available scalar items
-      for (int j = 0; j < nvar; j++){
-        elements_data[j][i - elements_start_index] = std::stof(toks_elms[3+j]);
-      }
-      // Filling up with 0 if not enough scalars
-      for (int j = nvar; j < ncomponents; j++){
-        elements_data[j][i - elements_start_index] = 0;
-      }
+  std::vector<std::string>::iterator nodes_start_it = std::find(m_data.begin(), m_data.end(), "$Elements");
+  int nodes_index = std::distance(m_data.begin(), nodes_start_it);
+  int nnodes = std::stoi(m_data[nodes_index + 1]);
+  int nodes_start_index = nodes_index + 2;
+  std::vector<std::string>::iterator nodes_end_it = std::find(m_data.begin(), m_data.end(), "$EndElements");
+  int nodes_end_index = std::distance(m_data.begin(), nodes_end_it);
+
+  std::vector<int> tags;
+  for (int i = nodes_start_index; i < nodes_end_index; ++i) {
+    std::vector<std::string> toks_vertices = split(m_data[i]);
+    int nb_tag = std::stod(toks_vertices[2]);
+    if(toks_vertices[1] == "2" || toks_vertices[1] == "4"){
+      tags.push_back(std::stod(toks_vertices[tag]));
     }
   }
-  /* for (int i = elements_start_index; i < elements_end_index; ++i) {
-    std::vector<std::string> toks_elms = split(m_data[i]);
-    int nvar = std::stoi(toks_elms[2]);
-    if (toks_elms[1] == "2")
-        elements_data[0][i - elements_start_index] = std::stof(toks_elms[3]);
-    if (toks_elms[1] == "4")
-      elements_data[1][i - elements_start_index] = std::stof(toks_elms[3]);
-  } */
 
   //
   // If you do have a scalar variable, here is some code that may be helpful.
   //
-  vtkDataArray *rv = vtkFloatArray::New();
-
-  // Setting up the Float array settings
-  rv->SetName("Scalar Values");
-  rv->SetNumberOfTuples(ncomponents);
-  rv->SetNumberOfComponents(ncomponents);
-  rv->SetNumberOfValues(nvalues);
-
-  // Filling the array
-  for (int i = 0 ; i < ncomponents ; i++){
-    rv->SetTuple(i, elements_data[i]);
+  int ntuples = tags.size(); // number of entries in the variable.
+  vtkFloatArray *rv = vtkFloatArray::New();
+  rv->SetNumberOfTuples(ntuples);
+  for (int i = 0 ; i < ntuples ; i++)
+  {
+    rv->SetTuple1(i, tags[i]);
   }
 
   return rv;
-
-  //======================  END CODE WRITTEN:
 }
 
 
